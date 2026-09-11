@@ -1,8 +1,11 @@
 [CmdletBinding()]
-param([ValidateSet('All','Restore','Lifecycle')][string]$Suite = 'All')
+param([ValidateSet('All','Restore','Lifecycle')][string]$Suite = 'All',
+      [string]$FixtureRoot = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$fixture = Join-Path $PSScriptRoot ('temp\session test-' + [guid]::NewGuid().ToString('N'))
+if (!$FixtureRoot) { $FixtureRoot = Join-Path $PSScriptRoot 'temp' }
+$testRoot = [IO.Path]::GetFullPath($FixtureRoot).TrimEnd('\') + '\'
+$fixture = Join-Path $testRoot ('session test-' + [guid]::NewGuid().ToString('N'))
 $processes = [Collections.Generic.List[object]]::new()
 $original = "game `"Condition Zero`"`r`ngamedll `"dlls\mp.dll`"`r`n"
 $build = Join-Path $fixture 'build'
@@ -59,8 +62,9 @@ function Start-Owner {
     $processes.Add($process)
     return [pscustomobject]@{ Process=$process; Alive=$alive; StartTime=$process.StartTime.ToUniversalTime().ToFileTimeUtc() }
 }
-function Start-Worker([string]$Root,$Owner,[long]$StartTime = 0,[switch]$RemoveStatus) {
+function Start-Worker([string]$Root,$Owner,[long]$StartTime = 0,[switch]$RemoveStatus,[string]$StatusArgument = '') {
     $status = Join-Path $fixture ([guid]::NewGuid().ToString('N') + '.status')
+    if ($StatusArgument) { $status = $StatusArgument }
     [IO.File]::WriteAllText($status,'')
     if (!$StartTime) { $StartTime = $Owner.StartTime }
     $args = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $session + '" -GamePath "' + $Root + '" -BuildDir "' + $build + '" -OwnerPid ' + $Owner.Process.Id + ' -OwnerStartTime ' + $StartTime + ' -StatusPath "' + $status + '"'
@@ -175,6 +179,51 @@ try {
         [IO.File]::WriteAllText($source,'using System; using System.IO; using System.Threading; class Sleeper { static void Main(string[] args) { while (File.Exists(args[0])) Thread.Sleep(50); } }')
         & (Join-Path $env:SystemRoot 'Microsoft.NET\Framework\v4.0.30319\csc.exe') /nologo /target:winexe ('/out:' + $sleeper) $source
         Require ($LASTEXITCODE -eq 0) 'test process compile failed'
+
+        # Windows may pass TEMP using an 8.3 alias. The same file must remain
+        # usable after .NET expands that alias or normalizes path separators.
+        $statusDirectory = Join-Path $fixture ('status ' + [string][char]0x6D4B + [char]0x8BD5)
+        New-Item -ItemType Directory -Path $statusDirectory -Force | Out-Null
+        $statusPaths = @(
+            (Join-Path $statusDirectory '.\parent.status'),
+            (Join-Path $statusDirectory '..\parent.status'),
+            ((Join-Path $statusDirectory 'forward.status').Replace('\','/'))
+        )
+        $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+        try { $shortDirectory = $fileSystem.GetFolder($statusDirectory).ShortPath }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($fileSystem) }
+        if ($shortDirectory -ine [IO.Path]::GetFullPath($shortDirectory)) {
+            $statusPaths = @($shortDirectory + '\short.status') + $statusPaths
+        } else { Write-Output 'SKIP: 8.3 status path (short names unavailable on this volume)' }
+        $pathGame = New-Game 'status-path-game'
+        foreach ($statusArgument in $statusPaths) {
+            $owner = Start-Owner
+            $worker = Start-Worker $pathGame $owner -StatusArgument $statusArgument
+            Wait-Status $worker ready
+            Require (Test-Path -LiteralPath (Manifest $pathGame)) 'normalized status path skipped preparation'
+            Stop-TestProcess $owner.Process
+            Wait-Done $worker
+            Check-Clean $pathGame
+            Require ([IO.File]::ReadAllText($statusArgument).StartsWith('cleaned')) 'status alias lost final cleanup status'
+            Write-Output ('PASS: prepare and cleanup with status path ' + $statusArgument)
+        }
+
+        # Normalization must not turn a relative path into an accepted absolute path.
+        $relativePaths = @('relative.status')
+        if ($fixture -match '^[A-Za-z]:') {
+            $relativePaths += $fixture.Substring(0,2) + 'drive-relative.status'
+            $relativePaths += $fixture.Substring(2) + '\root-relative.status'
+        }
+        foreach ($statusArgument in $relativePaths) {
+            $errorPath = Join-Path $fixture 'relative.stderr'
+            $args = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $session + '" -OwnerPid 0 -OwnerStartTime 0 -StatusPath "' + $statusArgument + '"'
+            $process = Start-Process -FilePath $powershell -ArgumentList $args -WorkingDirectory $fixture -WindowStyle Hidden -PassThru -RedirectStandardError $errorPath -RedirectStandardOutput (Join-Path $fixture 'relative.stdout')
+            $null = $process.Handle
+            $processes.Add($process)
+            Require ($process.WaitForExit(15000)) 'relative-path worker did not exit'
+            Require ($process.ExitCode -ne 0) ('relative status path was accepted: ' + $statusArgument)
+        }
+        Write-Output 'PASS: ordinary, drive-relative and root-relative status paths rejected'
 
         $game = New-Game 'normal'
         $owner = Start-Owner
@@ -312,7 +361,6 @@ try {
 } finally {
     foreach ($process in $processes) { Stop-TestProcess $process }
     $resolved = (Resolve-Path -LiteralPath $fixture).Path
-    $testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'temp')) + '\'
     if (!$resolved.StartsWith($testRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Fixture boundary mismatch' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }

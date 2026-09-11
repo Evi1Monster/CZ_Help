@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.2',
+param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.3',
       [string]$OutputDirectory = '')
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $repo = Split-Path -Parent $PSScriptRoot

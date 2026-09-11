@@ -113,7 +113,10 @@ function Invoke-Session {
     Set-SessionStatus cleaned
 }
 try {
-    if (![IO.Path]::IsPathRooted($StatusPath) -or [IO.Path]::GetFullPath($StatusPath) -ine $StatusPath) { throw 'StatusPath must be a normalized absolute file path.' }
+    # TEMP can contain an 8.3 alias; .NET expands it even though it names the
+    # same file. Normalize once, but still reject drive/current-root relative paths.
+    if ([IO.Path]::GetPathRoot($StatusPath) -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2})') { throw 'StatusPath must be an absolute file path.' }
+    $StatusPath = [IO.Path]::GetFullPath($StatusPath)
     if (!(Test-Path -LiteralPath (Split-Path -Parent $StatusPath) -PathType Container)) { throw 'Status file directory does not exist.' }
     Invoke-Session
     if ($RemoveStatusOnSuccess -and (Test-Path -LiteralPath $StatusPath)) { Remove-Item -LiteralPath $StatusPath }
