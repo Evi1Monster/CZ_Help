@@ -46,5 +46,13 @@ Health=1
 119 / 120 / 122 分别是 F8 / F9 / F11，114 是 F3。前三个快捷键非法或重复时回退到默认值；
 修改游戏目录后需关闭并重开辅助；
 
+## 带 YaPB 的任务包
+
+1.4.4 起支持 `czero/liblist.gam` 使用 `gamedll "addons/yapb/bin/yapb.dll"` 的任务包。先关闭游戏、打开辅助，等待“准备就绪”后再启动游戏，无需手动修改任务包入口。
+
+自动配置会临时通过 Metamod 同时加载 YaPB 和 CZ Help，保留 YaPB 的 DLL、机器人配置及已有插件条目。关闭辅助后，待游戏退出，自动恢复原始入口和插件配置；已有 YaPB 条目不会重复添加。YaPB DLL 缺失或入口属于其他未知模块时，在写入前报错。
+
+兼容安装不等于任务包所有玩法均已验证。支持范围仍为本地 BOT 对局；任务包实际对局需要确认机器人与辅助功能正常。原理见 [YaPB 官方安装说明](https://yapb.readthedocs.io/en/latest/installation.html#installing-as-metamod-plugin)。
+
 
 依赖来源和许可见 `third_party/SOURCES.md`、`third_party/metamod-runtime/SOURCE.md`。

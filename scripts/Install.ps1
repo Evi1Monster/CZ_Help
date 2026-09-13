@@ -30,7 +30,11 @@ $lib = $byteEncoding.GetString([IO.File]::ReadAllBytes($libPath))
 $match = [regex]::Match($lib,'(?m)^gamedll\s+"([^"\r\n]+)"')
 if (!$match.Success) { throw 'No Windows gamedll entry in liblist.gam' }
 $currentDll = $match.Groups[1].Value.Replace('/','\')
-if ($currentDll -ieq 'dlls\mp.dll') {
+$standaloneYaPB = $currentDll -ieq 'addons\yapb\bin\yapb.dll'
+if ($standaloneYaPB -and !(Test-Path -LiteralPath (Join-Path (Join-Path $root 'czero') $currentDll) -PathType Leaf)) {
+    throw "YaPB DLL is missing: $currentDll. Restore the task pack bot files before retrying. No files were changed."
+}
+if ($currentDll -ieq 'dlls\mp.dll' -or $standaloneYaPB) {
     $newLib = $lib.Substring(0,$match.Groups[1].Index) + 'addons/cz_help/metamod.dll' + $lib.Substring($match.Groups[1].Index+$match.Groups[1].Length)
     Add-Change 'czero\liblist.gam' ($byteEncoding.GetBytes($newLib))
     Add-Change 'czero\addons\cz_help\metamod.dll' ([IO.File]::ReadAllBytes($runtime))
@@ -41,6 +45,11 @@ $pluginsPath = Get-OwnedPath $root 'czero\addons\metamod\plugins.ini'
 $plugins = if (Test-Path -LiteralPath $pluginsPath) { $byteEncoding.GetString([IO.File]::ReadAllBytes($pluginsPath)) } else { '' }
 if ($plugins -match '(?im)^\s*win32\s+addons/cz_help/cz_help_mm\.dll\b') { throw 'An untracked CZ Help plugin entry already exists; preserve it and resolve before installing.' }
 if ($plugins.Length -and !$plugins.EndsWith("`n")) { $plugins += "`r`n" }
+# YaPB supports both standalone and Metamod loading. Preserve its binary and
+# original entry via the existing transaction, so session cleanup restores it.
+if ($standaloneYaPB -and $plugins -notmatch '(?im)^[ \t]*win32[ \t]+addons[\\/]yapb[\\/]bin[\\/]yapb\.dll(?=\s|$)') {
+    $plugins += "win32 addons/yapb/bin/yapb.dll`r`n"
+}
 $plugins += "win32 addons/cz_help/cz_help_mm.dll`r`n"
 Add-Change 'czero\addons\metamod\plugins.ini' ($byteEncoding.GetBytes($plugins))
 Add-Change 'czero\addons\cz_help\cz_help_mm.dll' ([IO.File]::ReadAllBytes($plugin))

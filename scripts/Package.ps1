@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.3',
+param([ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.4',
       [string]$OutputDirectory = '')
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
@@ -11,7 +11,8 @@ $zip = $package + '.zip'
 if ((Test-Path -LiteralPath $package) -or (Test-Path -LiteralPath $zip)) { throw 'Release output already exists. Choose a new output directory to avoid replacing it.' }
 foreach ($binary in @('CZ_Help.exe','cz_help_mm.dll')) { $null = Get-ReleaseFile $repo $binary 'Release' (Join-Path $repo 'build') }
 $releaseNotes = Join-Path $repo ('docs\release-' + $Version + '.md')
-if (!(Test-Path -LiteralPath $releaseNotes)) { throw 'Release notes are missing.' }
+if (!(Test-Path -LiteralPath $releaseNotes)) { $releaseNotes = Join-Path $repo 'README.md' }
+if (!(Test-Path -LiteralPath $releaseNotes)) { throw 'Release notes and README are missing.' }
 if ((Get-Item -LiteralPath (Join-Path $repo 'build\Release\CZ_Help.exe')).VersionInfo.ProductVersion -cne $Version) { throw 'Built EXE version does not match requested package version.' }
 New-Item -ItemType Directory -Path (Join-Path $package 'bin'),(Join-Path $package 'scripts') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'build\Release\CZ_Help.exe') -Destination $package

@@ -21,11 +21,16 @@ foreach($line in $lines) {
 if(@(Get-ChildItem -LiteralPath $package -Recurse -File).Count -ne $lines.Count+1) { throw 'Unlisted package files' }
 $exe=Join-Path $package 'CZ_Help.exe'
 & (Join-Path $PSScriptRoot 'native_session_tests.ps1') -BinaryPath $exe -VerifyModes:$VerifyModes
+# Use a fresh host for the second native test's Add-Type declarations.
+& powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'native_session_tests.ps1') -BinaryPath $exe -YaPB
+if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE YaPB lifecycle verification failed' }
+& (Join-Path $PSScriptRoot 'yapb_install_tests.ps1') -ScriptsDirectory (Join-Path $package 'scripts')
 if($DiscoveryFixtureBinary) {
     & (Join-Path $PSScriptRoot 'game_discovery_ui_tests.ps1') -BinaryPath $exe -FixtureBinary $DiscoveryFixtureBinary
 }
 $version=(Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
 $report="Version: $version`r`nSHA256: $zipHash`r`nAll $($lines.Count) file hashes and complete archive coverage: PASS.`r`nPackaged EXE automatic preparation, readiness, normal close and crash restoration: PASS.`r`n"
+$report+="YaPB migration, plugin entry preservation, normal/crash cleanup, install/update/restore and refusal cases: PASS.`r`n"
 if($VerifyModes) { $report+="Two radio modes, preference persistence and default-disabled restart: PASS.`r`n" }
 if($DiscoveryFixtureBinary) { $report+="Packaged EXE game-first discovery, Unicode path persistence, delayed preparation and restoration: PASS.`r`n" }
 [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $archivePath) ('CZ_Help-'+$version+'-verification.txt')),$report,[Text.Encoding]::UTF8)

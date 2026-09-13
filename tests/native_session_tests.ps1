@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$BinaryPath,[switch]$VerifyModes)
+param([Parameter(Mandatory=$true)][string]$BinaryPath,[switch]$VerifyModes,[switch]$YaPB)
 $ErrorActionPreference='Stop'
 $binary=(Resolve-Path -LiteralPath $BinaryPath).Path
 if (@(Get-Process -Name CZ_Help -ErrorAction SilentlyContinue).Count) { throw 'Close the existing CZ Help before native lifecycle tests; no user process was stopped.' }
@@ -37,6 +37,12 @@ New-Item -ItemType Directory -Path (Join-Path $fixture 'czero/dlls'),(Join-Path 
 [IO.File]::WriteAllText((Join-Path $fixture 'hl.exe'),'fixture, never executed')
 [IO.File]::WriteAllText((Join-Path $fixture 'czero/dlls/mp.dll'),'fixture')
 $original="game `"Condition Zero`"`r`ngamedll `"dlls/mp.dll`"`r`n"
+if($YaPB) {
+    $original="game `"Condition Zero`"`r`ngamedll `"addons/yapb/bin/yapb.dll`"`r`n"
+    $yapbPath=Join-Path $fixture 'czero/addons/yapb/bin/yapb.dll'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $yapbPath) -Force | Out-Null
+    [IO.File]::WriteAllText($yapbPath,'task pack YaPB, never executed')
+}
 $plugins="// other plugin configuration`r`n"
 $libPath=Join-Path $fixture 'czero/liblist.gam'
 $pluginsPath=Join-Path $fixture 'czero/addons/metamod/plugins.ini'
@@ -63,6 +69,10 @@ try {
             return $text.Contains([string][char]0x51C6+[char]0x5907+[char]0x5C31+[char]0x7EEA)
         } 'Native UI did not display ready'
         if (!(Test-Path -LiteralPath $manifest)) { throw 'Ready was displayed without an install record' }
+        if($YaPB) {
+            if([IO.File]::ReadAllText($libPath) -notmatch 'gamedll "addons/cz_help/metamod.dll"' -or
+                [IO.File]::ReadAllText($pluginsPath) -notmatch '(?m)^win32 addons/yapb/bin/yapb.dll\r?$') { throw 'Ready was displayed without the YaPB Metamod configuration' }
+        }
         if($VerifyModes) {
             $panel=[CZNativeSessionTest]::Panel($helper.Id)
             if($crash -and [CZNativeSessionTest]::SendMessage([CZNativeSessionTest]::GetDlgItem($panel,202),0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -ne 1) { throw 'Mode was not preserved on restart' }
@@ -85,12 +95,14 @@ try {
         Wait-Condition { !(Test-Path -LiteralPath $manifest) } 'Native owner exit did not trigger automatic cleanup'
         if ([IO.File]::ReadAllText($libPath) -cne $original -or [IO.File]::ReadAllText($pluginsPath) -cne $plugins -or
             (Test-Path -LiteralPath (Join-Path $fixture 'czero/addons/cz_help/cz_help_mm.dll'))) { throw 'Native cleanup did not restore original files' }
+        if($YaPB -and [IO.File]::ReadAllText($yapbPath) -cne 'task pack YaPB, never executed') { throw 'Native lifecycle changed the task pack bot DLL' }
         $helper.Dispose(); $helper=$null
     }
     $resolved=(Resolve-Path -LiteralPath $fixture).Path
     if (!$resolved.StartsWith($testRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Fixture cleanup boundary mismatch' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
     Write-Output 'PASS: real EXE auto-preparation, ready UI, normal close restoration and crash restoration; original files preserved.'
+    if($YaPB) { Write-Output 'PASS: YaPB direct entry migrates automatically and returns after normal close and crash; bot DLL preserved.' }
     if($VerifyModes) { Write-Output 'PASS: exactly two radio buttons are mutually exclusive; selected mode persists, movement stays off on restart.' }
 } finally {
     if ($helper) { $helper.Refresh(); if (!$helper.HasExited) { Stop-Process -InputObject $helper -Force }; $helper.Dispose() }

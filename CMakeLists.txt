@@ -32,10 +32,14 @@ target_link_libraries(CZ_Help PRIVATE cz_core cz_session cz_game_detection user3
 add_test(NAME application_startup COMMAND CZ_Help --smoke-test)
 add_test(NAME managed_session_ui COMMAND powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass
   -File "${CMAKE_SOURCE_DIR}/tests/native_session_tests.ps1" -BinaryPath "$<TARGET_FILE:CZ_Help>" -VerifyModes)
+add_test(NAME managed_yapb_session_ui COMMAND powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass
+  -File "${CMAKE_SOURCE_DIR}/tests/native_session_tests.ps1" -BinaryPath "$<TARGET_FILE:CZ_Help>" -YaPB)
+add_test(NAME yapb_install COMMAND powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass
+  -File "${CMAKE_SOURCE_DIR}/tests/yapb_install_tests.ps1")
 add_test(NAME game_discovery_ui COMMAND powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass
   -File "${CMAKE_SOURCE_DIR}/tests/game_discovery_ui_tests.ps1" -BinaryPath "$<TARGET_FILE:CZ_Help>" -FixtureBinary "$<TARGET_FILE:game_detection_tests>")
 # These tests temporarily run the single-instance helper and share its INI.
-set_tests_properties(managed_session_ui game_discovery_ui game_detection PROPERTIES RUN_SERIAL TRUE)
+set_tests_properties(managed_session_ui managed_yapb_session_ui game_discovery_ui game_detection PROPERTIES RUN_SERIAL TRUE)
 add_executable(channel_tests tests/channel_tests.cpp)
 target_link_libraries(channel_tests PRIVATE cz_core)
 add_test(NAME snapshot_channel COMMAND channel_tests)
